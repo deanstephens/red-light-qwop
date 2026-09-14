@@ -21,6 +21,16 @@ namespace RedLightQwop.Editor
         public const float CourseLength = 20f;
         const float k_CourseWidth = 10f;
 
+        // x, z offsets from the player's start position.
+        static readonly Vector2[] k_NpcSpawns =
+        {
+            new Vector2(-1.4f, 0.9f), new Vector2(1.4f, 0.9f),
+            new Vector2(-2.6f, -0.4f), new Vector2(2.6f, -0.4f),
+            new Vector2(-3.8f, 0.6f), new Vector2(3.8f, 0.6f),
+            new Vector2(-1.2f, -1.4f), new Vector2(1.2f, -1.4f),
+            new Vector2(-3.2f, 1.8f), new Vector2(3.2f, 1.8f),
+        };
+
         [MenuItem("Red Light Qwop/Build Game Scene")]
         public static void BuildFromMenu() => Build();
 
@@ -60,6 +70,8 @@ namespace RedLightQwop.Editor
             var dollSkinMat = Mat(lit, "DollSkin", new Color(0.95f, 0.85f, 0.7f));
             var dollDressMat = Mat(lit, "DollDress", new Color(0.95f, 0.45f, 0.1f));
             var faceMat = Mat(lit, "DollFace", new Color(0.1f, 0.1f, 0.1f));
+            var npcBodyMat = Mat(lit, "NpcBody", new Color(0.35f, 0.7f, 0.55f));
+            var npcAccentMat = Mat(lit, "NpcAccent", new Color(0.85f, 0.8f, 0.35f));
             var indicatorMat = Mat(lit, "Indicator", new Color(0.2f, 0.9f, 0.3f));
             indicatorMat.EnableKeyword("_EMISSION");
             indicatorMat.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
@@ -109,6 +121,35 @@ namespace RedLightQwop.Editor
             player.transform.position = new Vector3(0f, 0.02f, 0f);
             var ragdoll = player.GetComponent<Ragdoll>();
             var controller = player.GetComponent<LimbController>();
+
+            int playerLayer = EnsureLayer(GameManager.PlayerLayerName, 8);
+            int npcLayer = EnsureLayer(GameManager.NpcLayerName, 9);
+            ragdoll.SetLayer(playerLayer);
+            Physics.IgnoreLayerCollision(npcLayer, npcLayer, true);
+            Physics.IgnoreLayerCollision(npcLayer, playerLayer, true);
+
+            // --- NPC runners, spread around the player ------------------------------------
+            var npcRoot = new GameObject("Runners");
+            for (int i = 0; i < k_NpcSpawns.Length; i++)
+            {
+                var npcGo = (GameObject)PrefabUtility.InstantiatePrefab(prefab, scene);
+                npcGo.name = $"Runner_{i + 1}";
+                npcGo.transform.SetParent(npcRoot.transform, true);
+                npcGo.transform.position = new Vector3(k_NpcSpawns[i].x, 0.02f, k_NpcSpawns[i].y);
+                var npcRagdoll = npcGo.GetComponent<Ragdoll>();
+                npcRagdoll.SetLayer(npcLayer);
+                foreach (var r in npcGo.GetComponentsInChildren<MeshRenderer>())
+                {
+                    if (r.sharedMaterial == bodyMat) r.sharedMaterial = npcBodyMat;
+                    else if (r.sharedMaterial == accentMat) r.sharedMaterial = npcAccentMat;
+                }
+                var brain = npcGo.AddComponent<NpcBrain>();
+                brain.Ragdoll = npcRagdoll;
+                brain.Controller = npcGo.GetComponent<LimbController>();
+                brain.Controller.UseKeyboard = false;
+                brain.StartDelay = 0.2f + 0.1f * (i % 5);
+                brain.StepTime = 0.19f + 0.01f * (i % 4);
+            }
 
             // --- Doll ----------------------------------------------------------------------
             var dollRoot = new GameObject("TrafficDoll");
@@ -190,6 +231,27 @@ namespace RedLightQwop.Editor
         }
 
         // ---------------------------------------------------------------------------------------
+
+        /// <summary>Returns the index of a named user layer, creating it in TagManager if needed.</summary>
+        static int EnsureLayer(string name, int preferredIndex)
+        {
+            int existing = LayerMask.NameToLayer(name);
+            if (existing >= 0) return existing;
+
+            var tagManager = new SerializedObject(AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/TagManager.asset")[0]);
+            var layers = tagManager.FindProperty("layers");
+            for (int i = Mathf.Max(8, preferredIndex); i < layers.arraySize; i++)
+            {
+                var slot = layers.GetArrayElementAtIndex(i);
+                if (string.IsNullOrEmpty(slot.stringValue))
+                {
+                    slot.stringValue = name;
+                    tagManager.ApplyModifiedProperties();
+                    return i;
+                }
+            }
+            throw new System.InvalidOperationException($"No free user layer for '{name}'.");
+        }
 
         static void EnsureFolders()
         {

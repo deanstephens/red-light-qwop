@@ -25,7 +25,8 @@ namespace RedLightQwop
 
             if (InfoText != null)
             {
-                InfoText.text = $"{game.DistanceToFinish:0.0} m to go     {Mathf.CeilToInt(game.TimeRemaining)} s";
+                string runners = game.NpcCount > 0 ? $"     runners {game.NpcActiveCount}/{game.NpcCount}" : "";
+                InfoText.text = $"{game.DistanceToFinish:0.0} m to go     {Mathf.CeilToInt(game.TimeRemaining)} s{runners}";
             }
 
             if (CenterText != null)

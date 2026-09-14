@@ -38,10 +38,17 @@ namespace RedLightQwop
         [Tooltip("Applies a torque that pulls the pelvis and torso toward upright and facing +Z. Lower it for a harder game.")]
         public bool BalanceAssist = true;
         public float UprightSpring = 900f;
-        public float UprightDamper = 60f;
+        public float UprightDamper = 100f;
         [Range(0f, 1f)] public float TorsoShare = 0.5f;
 
+        [Header("Braking")]
+        [Tooltip("Linear damping applied to every part while no limb input is held, so the doll stops quickly when the player freezes.")]
+        public float BrakeDamping = 4f;
+        public float RunDamping = 0.05f;
+        public bool AllowBraking = true;
+
         public Rigidbody[] Bodies { get; private set; }
+        public bool IsBraking { get; private set; }
 
         void Awake()
         {
@@ -114,6 +121,45 @@ namespace RedLightQwop
         public void SetVelocity(Vector3 velocity)
         {
             foreach (var b in Bodies) b.linearVelocity = velocity;
+        }
+
+        /// <summary>Switch between run damping and brake damping on every part.</summary>
+        public void SetBraking(bool braking)
+        {
+            braking = braking && AllowBraking;
+            if (braking == IsBraking) return;
+            IsBraking = braking;
+            float d = braking ? BrakeDamping : RunDamping;
+            foreach (var b in Bodies) b.linearDamping = d;
+        }
+
+        /// <summary>Drop all muscle strength and the balance assist so the doll collapses.</summary>
+        public void GoLimp(float spring = 20f, float damper = 5f)
+        {
+            BalanceAssist = false;
+            AllowBraking = false;
+            SetBraking(false);
+            foreach (var muscle in GetComponentsInChildren<Muscle>())
+            {
+                muscle.Spring = spring;
+                muscle.Damper = damper;
+                muscle.ApplyDrive();
+            }
+        }
+
+        /// <summary>Recolor every visual on this doll (instantiates materials).</summary>
+        public void Tint(Color color)
+        {
+            foreach (var r in GetComponentsInChildren<MeshRenderer>())
+            {
+                r.material.SetColor("_BaseColor", color);
+            }
+        }
+
+        /// <summary>Put every part of the doll on the given physics layer.</summary>
+        public void SetLayer(int layer)
+        {
+            foreach (var t in GetComponentsInChildren<Transform>(true)) t.gameObject.layer = layer;
         }
     }
 }

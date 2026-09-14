@@ -44,7 +44,15 @@ namespace RedLightQwop
 
         void FixedUpdate()
         {
-            Apply(InputEnabled ? Current : default);
+            var input = InputEnabled ? Current : default;
+            Apply(input);
+            if (Ragdoll != null) Ragdoll.SetBraking(IsNeutral(input));
+        }
+
+        static bool IsNeutral(LimbInput i)
+        {
+            return Mathf.Approximately(i.LeftHip, 0f) && Mathf.Approximately(i.RightHip, 0f)
+                && Mathf.Approximately(i.LeftKnee, 0f) && Mathf.Approximately(i.RightKnee, 0f);
         }
 
         void ReadKeyboard()

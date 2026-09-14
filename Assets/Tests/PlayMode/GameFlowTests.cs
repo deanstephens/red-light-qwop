@@ -106,10 +106,11 @@ namespace RedLightQwop.Tests
             yield return new WaitForSeconds(0.5f);
 
             float startZ = m_Ragdoll.Position.z;
-            float targetZ = m_Game.FinishLine.position.z - 1.2f;
+            // Idle braking slows a doll with no input held, so start close and push firmly.
+            float targetZ = m_Game.FinishLine.position.z - 0.5f;
             m_Ragdoll.Teleport(new Vector3(0f, 0f, targetZ - startZ));
             yield return new WaitForFixedUpdate();
-            m_Ragdoll.SetVelocity(Vector3.forward * 3f);
+            m_Ragdoll.SetVelocity(Vector3.forward * 4f);
             yield return new WaitForSeconds(1.5f);
 
             Assert.AreEqual(GameState.Won, m_Game.State);

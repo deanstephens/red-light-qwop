@@ -35,7 +35,7 @@ namespace RedLightQwop.Tests
         [UnityTest, Timeout(300000)]
         public IEnumerator MeasureGaits()
         {
-            var report = new System.Text.StringBuilder("[Gait] name | distance m | min pelvis y | fell\n");
+            var report = new System.Text.StringBuilder("[Gait] name | distance m | min pelvis y | fell | settle time after release | min y after\n");
             foreach (var kv in k_Gaits)
             {
                 yield return SceneManager.LoadSceneAsync("Game");
@@ -69,7 +69,19 @@ namespace RedLightQwop.Tests
                     minY = Mathf.Min(minY, rag.Pelvis.position.y);
                 }
                 float dist = rag.Position.z - startZ;
-                report.AppendLine($"[Gait] {kv.Key} | {dist:0.00} | {minY:0.00} | {(minY < 0.55f ? "FELL" : "ok")}");
+
+                // Release everything and measure how long the doll keeps moving (matters for red light).
+                ctl.Current = default;
+                float settleT = -1f, t = 0f, minYAfter = float.MaxValue;
+                while (t < 2.5f)
+                {
+                    yield return null;
+                    t += Time.deltaTime;
+                    minYAfter = Mathf.Min(minYAfter, rag.Pelvis.position.y);
+                    if (settleT < 0f && rag.Speed < game.MoveThreshold) settleT = t;
+                    else if (settleT >= 0f && rag.Speed >= game.MoveThreshold) settleT = -1f; // moved again, keep waiting
+                }
+                report.AppendLine($"[Gait] {kv.Key} | {dist:0.00} | {minY:0.00} | {(minY < 0.55f ? "FELL" : "ok")} | settle {settleT:0.00}s | minY after stop {minYAfter:0.00}");
             }
             Debug.Log(report.ToString());
         }

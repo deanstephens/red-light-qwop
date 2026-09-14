@@ -26,7 +26,7 @@ namespace RedLightQwop
         [Tooltip("Min/max seconds a red phase lasts.")]
         public Vector2 RedDuration = new Vector2(2f, 4f);
         [Tooltip("Seconds after red starts before movement is judged (the doll is turning).")]
-        public float RedGracePeriod = 0.6f;
+        public float RedGracePeriod = 0.8f;
         [Tooltip("Pelvis speed (m/s) that counts as moving during red.")]
         public float MoveThreshold = 0.4f;
         [Tooltip("Seconds of continuous movement during red before elimination.")]
@@ -49,6 +49,21 @@ namespace RedLightQwop
 
         public bool IsRedJudging => Phase == LightPhase.Red && PhaseElapsed >= RedGracePeriod;
 
+        public const string PlayerLayerName = "Player";
+        public const string NpcLayerName = "NPC";
+
+        public System.Collections.Generic.List<NpcBrain> Npcs { get; } = new System.Collections.Generic.List<NpcBrain>();
+        public int NpcCount => Npcs.Count;
+        public int NpcActiveCount
+        {
+            get
+            {
+                int n = 0;
+                foreach (var npc in Npcs) if (npc.State == NpcBrain.NpcState.Active) n++;
+                return n;
+            }
+        }
+
         public float DistanceToFinish
         {
             get
@@ -61,11 +76,25 @@ namespace RedLightQwop
         void Awake()
         {
             if (PhysicsTimestep > 0f) Time.fixedDeltaTime = PhysicsTimestep;
+            ConfigureLayerCollisions();
+        }
+
+        /// <summary>NPCs never collide with each other or with the player, only with the world.</summary>
+        static void ConfigureLayerCollisions()
+        {
+            int npc = LayerMask.NameToLayer(NpcLayerName);
+            int player = LayerMask.NameToLayer(PlayerLayerName);
+            if (npc < 0) return;
+            Physics.IgnoreLayerCollision(npc, npc, true);
+            if (player >= 0) Physics.IgnoreLayerCollision(npc, player, true);
         }
 
         void Start()
         {
             m_Rng = RandomSeed == 0 ? new System.Random() : new System.Random(RandomSeed);
+            Npcs.Clear();
+            Npcs.AddRange(FindObjectsByType<NpcBrain>(FindObjectsSortMode.None));
+            foreach (var npc in Npcs) npc.Game = this;
             TimeRemaining = TimeLimit;
             State = GameState.Playing;
             SetPhase(LightPhase.Green, Range(GreenDuration));
@@ -160,10 +189,17 @@ namespace RedLightQwop
             }
         }
 
+        public Color EliminatedTint = new Color(0.45f, 0.4f, 0.4f);
+
         void End(GameState state)
         {
             State = state;
             if (Controller != null) Controller.InputEnabled = false;
+            if (state == GameState.Eliminated && Player != null)
+            {
+                Player.GoLimp();
+                Player.Tint(EliminatedTint);
+            }
             if (Hud != null) Hud.Refresh(this);
         }
 
