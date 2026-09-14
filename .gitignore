@@ -45,3 +45,7 @@ crashlytics-build.properties
 
 # macOS
 .DS_Store
+
+# Editor screenshots captured by the CLI
+/Assets/Screenshots/
+/Assets/Screenshots.meta
