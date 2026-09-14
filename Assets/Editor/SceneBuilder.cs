@@ -125,8 +125,9 @@ namespace RedLightQwop.Editor
             int playerLayer = EnsureLayer(GameManager.PlayerLayerName, 8);
             int npcLayer = EnsureLayer(GameManager.NpcLayerName, 9);
             ragdoll.SetLayer(playerLayer);
-            Physics.IgnoreLayerCollision(npcLayer, npcLayer, true);
-            Physics.IgnoreLayerCollision(npcLayer, playerLayer, true);
+            // Dolls collide with each other by default; GameManager.CharactersCollide can turn it off.
+            Physics.IgnoreLayerCollision(npcLayer, npcLayer, false);
+            Physics.IgnoreLayerCollision(npcLayer, playerLayer, false);
 
             // --- NPC runners, spread around the player ------------------------------------
             var npcRoot = new GameObject("Runners");

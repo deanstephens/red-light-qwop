@@ -70,6 +70,32 @@ namespace RedLightQwop.Tests
         }
 
         [UnityTest, Timeout(60000)]
+        public IEnumerator OneDollCanShoveAnother()
+        {
+            yield return LoadGame();
+            Assert.IsTrue(m_Game.CharactersCollide);
+            // Park every runner so only physics moves them.
+            foreach (var npc in m_Game.Npcs) npc.StartDelay = 1000f;
+            var pusher = m_Game.Npcs[0];
+            var target = m_Game.Npcs[1];
+            yield return new WaitForSeconds(1f);
+
+            // Line the pusher up half a metre behind the target and fire it forward.
+            Vector3 delta = target.Ragdoll.Position - pusher.Ragdoll.Position + new Vector3(0f, 0f, -0.6f);
+            delta.y = 0f;
+            pusher.Ragdoll.Teleport(delta);
+            pusher.Ragdoll.AllowBraking = false;
+            pusher.Ragdoll.SetBraking(false);
+            yield return new WaitForFixedUpdate();
+            Vector3 targetStart = target.Ragdoll.Position;
+            pusher.Ragdoll.SetVelocity(Vector3.forward * 5f);
+            yield return new WaitForSeconds(1.5f);
+
+            float moved = target.Ragdoll.Position.z - targetStart.z;
+            Assert.Greater(moved, 0.15f, "the struck doll should be pushed forward");
+        }
+
+        [UnityTest, Timeout(60000)]
         public IEnumerator AlertRunnersSurviveRed()
         {
             yield return LoadGame();

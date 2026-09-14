@@ -36,6 +36,8 @@ namespace RedLightQwop
         public int RandomSeed = 0;
         [Tooltip("Physics step in seconds. Jointed ragdolls need a small step to stay stable.")]
         public float PhysicsTimestep = 0.01f;
+        [Tooltip("When on, runners collide with each other and with the player, so a falling doll can knock others over. When off, dolls pass through each other.")]
+        public bool CharactersCollide = true;
 
         public LightPhase Phase { get; private set; }
         public GameState State { get; private set; }
@@ -76,17 +78,18 @@ namespace RedLightQwop
         void Awake()
         {
             if (PhysicsTimestep > 0f) Time.fixedDeltaTime = PhysicsTimestep;
-            ConfigureLayerCollisions();
+            ConfigureLayerCollisions(CharactersCollide);
         }
 
-        /// <summary>NPCs never collide with each other or with the player, only with the world.</summary>
-        static void ConfigureLayerCollisions()
+        /// <summary>Enable or disable doll-versus-doll contact via the Player and NPC layers.
+        /// Each doll always ignores collisions between its own parts regardless.</summary>
+        public static void ConfigureLayerCollisions(bool collide)
         {
             int npc = LayerMask.NameToLayer(NpcLayerName);
             int player = LayerMask.NameToLayer(PlayerLayerName);
             if (npc < 0) return;
-            Physics.IgnoreLayerCollision(npc, npc, true);
-            if (player >= 0) Physics.IgnoreLayerCollision(npc, player, true);
+            Physics.IgnoreLayerCollision(npc, npc, !collide);
+            if (player >= 0) Physics.IgnoreLayerCollision(npc, player, !collide);
         }
 
         void Start()
