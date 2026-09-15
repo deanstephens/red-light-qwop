@@ -43,7 +43,24 @@ namespace RedLightQwop
                     _ = game.StartClientRelayAsync(text);
                 }
             });
-            if (StatusText != null) StatusText.text = $"Your LAN address: {GameManager.LocalIPv4()}";
+            if (GameManager.IsWebBuild)
+            {
+                // No LAN hosting in a browser; solo and host both create an online session.
+                if (HostButton != null) HostButton.gameObject.SetActive(false);
+                if (SoloButton != null) SetLabel(SoloButton, "Play solo (online)");
+                if (AddressField != null && AddressField.placeholder is Text ph) ph.text = "join code";
+                if (StatusText != null) StatusText.text = "Runs in your browser through the online relay";
+            }
+            else if (StatusText != null)
+            {
+                StatusText.text = $"Your LAN address: {GameManager.LocalIPv4()}";
+            }
+        }
+
+        static void SetLabel(Button button, string text)
+        {
+            var label = button.GetComponentInChildren<Text>();
+            if (label != null) label.text = text;
         }
 
         void OnDestroy()

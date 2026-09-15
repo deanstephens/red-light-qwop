@@ -66,10 +66,16 @@ namespace RedLightQwop
 
         [Header("Network")]
         public ushort Port = 7777;
+        [Tooltip("Browser builds cannot open ports, so every session there goes through the relay, and the simulation is lighter.")]
+        public float WebPhysicsTimestep = 0.02f;
+        public int WebNpcCount = 6;
         [Tooltip("Players per online (relay) session, including the host.")]
         public int MaxPlayers = 4;
         [Tooltip("Honour --host, --join <ip>, --solo, --port <n>, --relay-host and --relay-join <code> on the command line.")]
         public bool UseCommandLine = true;
+
+        /// <summary>True in a WebGL player: no listening sockets, WebSocket transport, relay only.</summary>
+        public static bool IsWebBuild => Application.platform == RuntimePlatform.WebGLPlayer;
 
         public const string PlayerLayerName = "Player";
         public const string NpcLayerName = "NPC";
@@ -131,6 +137,7 @@ namespace RedLightQwop
         void Awake()
         {
             Instance = this;
+            if (IsWebBuild && WebPhysicsTimestep > 0f) PhysicsTimestep = WebPhysicsTimestep;
             if (PhysicsTimestep > 0f) Time.fixedDeltaTime = PhysicsTimestep;
             ConfigureLayerCollisions(CharactersCollide);
             m_Rng = RandomSeed == 0 ? new System.Random() : new System.Random(RandomSeed);
@@ -163,6 +170,21 @@ namespace RedLightQwop
 
         void HandleCommandLine()
         {
+            if (IsWebBuild)
+            {
+                // Browser builds have no command line; honour ?join=CODE in the page URL instead.
+                var url = Application.absoluteURL ?? "";
+                int q = url.IndexOf("join=", System.StringComparison.OrdinalIgnoreCase);
+                if (q >= 0)
+                {
+                    string code = url.Substring(q + 5);
+                    int end = code.IndexOfAny(new[] { '&', '#' });
+                    if (end >= 0) code = code.Substring(0, end);
+                    if (code.Length > 0) _ = StartClientRelayAsync(code);
+                }
+                return;
+            }
+
             var args = System.Environment.GetCommandLineArgs();
             string join = null, relayJoin = null;
             bool host = false, solo = false, relayHost = false;
@@ -202,6 +224,7 @@ namespace RedLightQwop
                     ConnectionApproval = false,
                 };
             }
+            ((UnityTransport)nm.NetworkConfig.NetworkTransport).UseWebSockets = IsWebBuild;
             foreach (var prefab in new[] { PlayerPrefab, NpcPrefab, GameStatePrefab })
             {
                 if (prefab != null && !nm.NetworkConfig.Prefabs.Contains(prefab)) nm.AddNetworkPrefab(prefab);
@@ -229,9 +252,15 @@ namespace RedLightQwop
             m_CallbacksHooked = false;
         }
 
-        /// <summary>Host a session that others can join at this machine's address. Also used for solo play.</summary>
+        /// <summary>Host a session that others can join at this machine's address. Also used for solo play.
+        /// Browser builds cannot listen, so they host through the relay instead.</summary>
         public bool StartHost()
         {
+            if (IsWebBuild)
+            {
+                _ = StartHostRelayAsync();
+                return true;
+            }
             var nm = EnsureNetworkManager();
             if (nm.IsListening) return false;
             var transport = (UnityTransport)nm.NetworkConfig.NetworkTransport;
@@ -246,6 +275,11 @@ namespace RedLightQwop
 
         public bool StartClient(string address)
         {
+            if (IsWebBuild)
+            {
+                SetStatus("browser builds join with a code, not an address");
+                return false;
+            }
             var nm = EnsureNetworkManager();
             if (nm.IsListening) return false;
             var transport = (UnityTransport)nm.NetworkConfig.NetworkTransport;
@@ -475,7 +509,8 @@ namespace RedLightQwop
 
         void SpawnNpcs()
         {
-            for (int i = 0; i < NpcSpawns.Length; i++)
+            int count = IsWebBuild ? Mathf.Min(WebNpcCount, NpcSpawns.Length) : NpcSpawns.Length;
+            for (int i = 0; i < count; i++)
             {
                 var go = Instantiate(NpcPrefab, NpcSpawns[i], Quaternion.identity);
                 go.name = $"Runner_{i + 1}";
