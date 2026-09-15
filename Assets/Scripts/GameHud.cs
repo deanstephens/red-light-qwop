@@ -43,14 +43,15 @@ namespace RedLightQwop
                         CenterText.text = "TIME'S UP\n<size=28>Press R to retry</size>";
                         break;
                     default:
-                        CenterText.text = "";
+                        CenterText.text = game.SessionActive && game.Player == null ? "Connecting..." : "";
                         break;
                 }
             }
 
             if (HintText != null)
             {
-                HintText.text = "Q / W  hips      O / P  knees      R  restart";
+                string session = string.IsNullOrEmpty(game.SessionLabel) ? "" : $"      |      {game.SessionLabel}, {game.Players.Count} player{(game.Players.Count == 1 ? "" : "s")}";
+                HintText.text = $"Q / W  hips      O / P  knees      R  restart{session}";
             }
         }
     }

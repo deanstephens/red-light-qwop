@@ -3,6 +3,8 @@
     "rootNamespace": "RedLightQwop.Tests",
     "references": [
         "RedLightQwop",
+        "Unity.Netcode.Runtime",
+        "Unity.Networking.Transport",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

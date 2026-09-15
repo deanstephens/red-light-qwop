@@ -1,5 +1,8 @@
 using System.IO;
 using Unity.Cinemachine;
+using Unity.Netcode;
+using UnityEngine.InputSystem.UI;
+using UnityEngine.EventSystems;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -18,18 +21,11 @@ namespace RedLightQwop.Editor
     {
         public const string ScenePath = "Assets/Scenes/Game.unity";
         public const string PrefabPath = "Assets/Prefabs/Ragdoll.prefab";
+        public const string NpcPrefabPath = "Assets/Prefabs/NpcRagdoll.prefab";
+        public const string GameStatePrefabPath = "Assets/Prefabs/NetGameState.prefab";
         public const float CourseLength = 20f;
         const float k_CourseWidth = 10f;
 
-        // x, z offsets from the player's start position.
-        static readonly Vector2[] k_NpcSpawns =
-        {
-            new Vector2(-1.4f, 0.9f), new Vector2(1.4f, 0.9f),
-            new Vector2(-2.6f, -0.4f), new Vector2(2.6f, -0.4f),
-            new Vector2(-3.8f, 0.6f), new Vector2(3.8f, 0.6f),
-            new Vector2(-1.2f, -1.4f), new Vector2(1.2f, -1.4f),
-            new Vector2(-3.2f, 1.8f), new Vector2(3.2f, 1.8f),
-        };
 
         [MenuItem("Red Light Qwop/Build Game Scene")]
         public static void BuildFromMenu() => Build();
@@ -112,45 +108,28 @@ namespace RedLightQwop.Editor
             triggerCol.size = new Vector3(k_CourseWidth, 3f, 0.6f);
             var finish = finishTrigger.AddComponent<FinishLine>();
 
-            // --- Player --------------------------------------------------------------------
-            var ragdollSource = RagdollFactory.Build(bodyMat, accentMat, footPhys);
-            var prefab = PrefabUtility.SaveAsPrefabAsset(ragdollSource, PrefabPath);
-            Object.DestroyImmediate(ragdollSource);
-            var player = (GameObject)PrefabUtility.InstantiatePrefab(prefab, scene);
-            player.name = "Player";
-            player.transform.position = new Vector3(0f, 0.02f, 0f);
-            var ragdoll = player.GetComponent<Ragdoll>();
-            var controller = player.GetComponent<LimbController>();
-
+            // --- Prefabs (spawned at runtime by the host) ------------------------------------
             int playerLayer = EnsureLayer(GameManager.PlayerLayerName, 8);
             int npcLayer = EnsureLayer(GameManager.NpcLayerName, 9);
-            ragdoll.SetLayer(playerLayer);
-            // Dolls collide with each other by default; GameManager.CharactersCollide can turn it off.
             Physics.IgnoreLayerCollision(npcLayer, npcLayer, false);
             Physics.IgnoreLayerCollision(npcLayer, playerLayer, false);
+            Physics.IgnoreLayerCollision(playerLayer, playerLayer, false);
 
-            // --- NPC runners, spread around the player ------------------------------------
-            var npcRoot = new GameObject("Runners");
-            for (int i = 0; i < k_NpcSpawns.Length; i++)
-            {
-                var npcGo = (GameObject)PrefabUtility.InstantiatePrefab(prefab, scene);
-                npcGo.name = $"Runner_{i + 1}";
-                npcGo.transform.SetParent(npcRoot.transform, true);
-                npcGo.transform.position = new Vector3(k_NpcSpawns[i].x, 0.02f, k_NpcSpawns[i].y);
-                var npcRagdoll = npcGo.GetComponent<Ragdoll>();
-                npcRagdoll.SetLayer(npcLayer);
-                foreach (var r in npcGo.GetComponentsInChildren<MeshRenderer>())
-                {
-                    if (r.sharedMaterial == bodyMat) r.sharedMaterial = npcBodyMat;
-                    else if (r.sharedMaterial == accentMat) r.sharedMaterial = npcAccentMat;
-                }
-                var brain = npcGo.AddComponent<NpcBrain>();
-                brain.Ragdoll = npcRagdoll;
-                brain.Controller = npcGo.GetComponent<LimbController>();
-                brain.Controller.UseKeyboard = false;
-                brain.StartDelay = 0.2f + 0.1f * (i % 5);
-                brain.StepTime = 0.19f + 0.01f * (i % 4);
-            }
+            var playerSource = RagdollFactory.Build(bodyMat, accentMat, footPhys, npc: false);
+            playerSource.GetComponent<Ragdoll>().SetLayer(playerLayer);
+            var playerPrefab = PrefabUtility.SaveAsPrefabAsset(playerSource, PrefabPath);
+            Object.DestroyImmediate(playerSource);
+
+            var npcSource = RagdollFactory.Build(npcBodyMat, npcAccentMat, footPhys, npc: true);
+            npcSource.GetComponent<Ragdoll>().SetLayer(npcLayer);
+            var npcPrefab = PrefabUtility.SaveAsPrefabAsset(npcSource, NpcPrefabPath);
+            Object.DestroyImmediate(npcSource);
+
+            var stateSource = new GameObject("NetGameState");
+            stateSource.AddComponent<NetworkObject>();
+            stateSource.AddComponent<NetGameState>();
+            var statePrefab = PrefabUtility.SaveAsPrefabAsset(stateSource, GameStatePrefabPath);
+            Object.DestroyImmediate(stateSource);
 
             // --- Doll ----------------------------------------------------------------------
             var dollRoot = new GameObject("TrafficDoll");
@@ -187,7 +166,7 @@ namespace RedLightQwop.Editor
 
             var vcamGo = new GameObject("FollowCamera");
             var vcam = vcamGo.AddComponent<CinemachineCamera>();
-            vcam.Target.TrackingTarget = ragdoll.Pelvis.transform;
+            vcam.transform.position = new Vector3(2.5f, 1.8f, -4.5f);
             var follow = vcamGo.AddComponent<CinemachineFollow>();
             follow.FollowOffset = new Vector3(2.5f, 1.8f, -4.5f);
             follow.TrackerSettings.BindingMode = Unity.Cinemachine.TargetTracking.BindingMode.WorldSpace;
@@ -212,14 +191,23 @@ namespace RedLightQwop.Editor
             hud.HintText = MakeText(canvasGo.transform, "HintText", new Vector2(0.5f, 0f), new Vector2(0f, 35f), new Vector2(1200f, 40f), 26, TextAnchor.MiddleCenter, FontStyle.Normal);
             hud.HintText.color = new Color(1f, 1f, 1f, 0.8f);
 
+            // --- Session menu ----------------------------------------------------------------
+            var eventSystem = new GameObject("EventSystem");
+            eventSystem.AddComponent<EventSystem>();
+            eventSystem.AddComponent<InputSystemUIInputModule>();
+            var menu = BuildSessionMenu(canvasGo.transform);
+
             // --- Game manager --------------------------------------------------------------
             var gameGo = new GameObject("GameManager");
             var game = gameGo.AddComponent<GameManager>();
-            game.Player = ragdoll;
-            game.Controller = controller;
+            game.PlayerPrefab = playerPrefab;
+            game.NpcPrefab = npcPrefab;
+            game.GameStatePrefab = statePrefab;
             game.Doll = doll;
             game.Hud = hud;
             game.FinishLine = finishTrigger.transform;
+            game.FollowCamera = vcam;
+            game.Menu = menu;
             finish.Game = game;
 
             // --- Save ----------------------------------------------------------------------
@@ -334,6 +322,82 @@ namespace RedLightQwop.Editor
             outline.effectColor = new Color(0f, 0f, 0f, 0.8f);
             outline.effectDistance = new Vector2(2f, -2f);
             return text;
+        }
+
+        static SessionMenu BuildSessionMenu(Transform canvas)
+        {
+            var panel = new GameObject("SessionPanel", typeof(RectTransform));
+            panel.transform.SetParent(canvas, false);
+            var prt = panel.GetComponent<RectTransform>();
+            prt.anchorMin = new Vector2(0.5f, 0.5f);
+            prt.anchorMax = new Vector2(0.5f, 0.5f);
+            prt.pivot = new Vector2(0.5f, 0.5f);
+            prt.sizeDelta = new Vector2(560f, 440f);
+            var bg = panel.AddComponent<Image>();
+            bg.color = new Color(0.05f, 0.08f, 0.12f, 0.92f);
+
+            var menu = canvas.gameObject.AddComponent<SessionMenu>();
+            menu.Panel = panel;
+
+            var title = MakeText(panel.transform, "Title", new Vector2(0.5f, 1f), new Vector2(0f, -40f), new Vector2(520f, 60f), 44, TextAnchor.MiddleCenter, FontStyle.Bold);
+            title.text = "RED LIGHT QWOP";
+            var sub = MakeText(panel.transform, "Subtitle", new Vector2(0.5f, 1f), new Vector2(0f, -90f), new Vector2(520f, 30f), 20, TextAnchor.MiddleCenter, FontStyle.Normal);
+            sub.text = "Q / W hips   O / P knees   R restart";
+            sub.color = new Color(1f, 1f, 1f, 0.7f);
+
+            menu.SoloButton = MakeButton(panel.transform, "SoloButton", "Play solo", new Vector2(0f, 30f));
+            menu.HostButton = MakeButton(panel.transform, "HostButton", "Host a game", new Vector2(0f, -40f));
+            menu.AddressField = MakeInputField(panel.transform, "AddressField", "host address", new Vector2(-90f, -110f), new Vector2(260f, 48f));
+            menu.JoinButton = MakeButton(panel.transform, "JoinButton", "Join", new Vector2(130f, -110f), new Vector2(160f, 48f));
+            menu.StatusText = MakeText(panel.transform, "Status", new Vector2(0.5f, 0f), new Vector2(0f, 24f), new Vector2(520f, 30f), 18, TextAnchor.MiddleCenter, FontStyle.Normal);
+            menu.StatusText.color = new Color(1f, 1f, 1f, 0.7f);
+            return menu;
+        }
+
+        static Button MakeButton(Transform parent, string name, string label, Vector2 position, Vector2? size = null)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = position;
+            rt.sizeDelta = size ?? new Vector2(380f, 56f);
+            var img = go.AddComponent<Image>();
+            img.color = new Color(0.2f, 0.55f, 0.85f);
+            var button = go.AddComponent<Button>();
+            button.targetGraphic = img;
+            var text = MakeText(go.transform, "Label", new Vector2(0.5f, 0.5f), Vector2.zero, rt.sizeDelta, 26, TextAnchor.MiddleCenter, FontStyle.Bold);
+            text.text = label;
+            Object.DestroyImmediate(text.GetComponent<Outline>());
+            return button;
+        }
+
+        static InputField MakeInputField(Transform parent, string name, string placeholder, Vector2 position, Vector2 size)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = position;
+            rt.sizeDelta = size;
+            var img = go.AddComponent<Image>();
+            img.color = new Color(0.95f, 0.95f, 0.95f);
+
+            var text = MakeText(go.transform, "Text", new Vector2(0.5f, 0.5f), Vector2.zero, size - new Vector2(20f, 8f), 22, TextAnchor.MiddleLeft, FontStyle.Normal);
+            text.color = Color.black;
+            text.supportRichText = false;
+            Object.DestroyImmediate(text.GetComponent<Outline>());
+            var ph = MakeText(go.transform, "Placeholder", new Vector2(0.5f, 0.5f), Vector2.zero, size - new Vector2(20f, 8f), 22, TextAnchor.MiddleLeft, FontStyle.Italic);
+            ph.text = placeholder;
+            ph.color = new Color(0f, 0f, 0f, 0.4f);
+            Object.DestroyImmediate(ph.GetComponent<Outline>());
+
+            var field = go.AddComponent<InputField>();
+            field.targetGraphic = img;
+            field.textComponent = text;
+            field.placeholder = ph;
+            field.text = "127.0.0.1";
+            return field;
         }
 
         static void AddSceneToBuild(string path)

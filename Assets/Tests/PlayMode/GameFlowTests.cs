@@ -18,21 +18,13 @@ namespace RedLightQwop.Tests
 
         IEnumerator LoadGame()
         {
-            yield return SceneManager.LoadSceneAsync("Game");
-            yield return null;
-
-            m_Game = Object.FindAnyObjectByType<GameManager>();
-            Assert.IsNotNull(m_Game, "GameManager missing from the Game scene");
-            m_Ragdoll = m_Game.Player;
-            m_Controller = m_Game.Controller;
-            Assert.IsNotNull(m_Ragdoll);
-            Assert.IsNotNull(m_Controller);
-
-            m_Controller.UseKeyboard = false;
+            yield return TestSession.Load(g => { m_Game = g; m_Ragdoll = g.Player; m_Controller = g.Controller; }, parkRunners: true);
             m_Controller.Current = default;
-            m_Game.ForcePhase(LightPhase.Green);
-            yield return new WaitForFixedUpdate();
+            m_Game.LocalPlayer.enabled = false; // tests drive Controller.Current directly
         }
+
+        [UnityTearDown]
+        public IEnumerator TearDown() => TestSession.Teardown();
 
         float LeftFootForwardOffset => m_Ragdoll.LeftLowerLeg.position.z - m_Ragdoll.Pelvis.position.z;
 
@@ -97,6 +89,7 @@ namespace RedLightQwop.Tests
 
             Assert.AreEqual(GameState.Eliminated, m_Game.State);
             Assert.IsFalse(m_Controller.InputEnabled, "input should lock after elimination");
+            Assert.IsFalse(m_Ragdoll.BalanceAssist, "an eliminated player goes limp");
         }
 
         [UnityTest, Timeout(30000)]

@@ -23,11 +23,23 @@ namespace RedLightQwop
         Rigidbody m_ParentBody;
         Quaternion m_StartLocalRotation;
 
+        public float OriginalSpring { get; private set; }
+        public float OriginalDamper { get; private set; }
+
         void Awake()
         {
             Joint = GetComponent<ConfigurableJoint>();
             m_ParentBody = Joint.connectedBody;
             m_StartLocalRotation = LocalRotationRelativeToParent();
+            OriginalSpring = Spring;
+            OriginalDamper = Damper;
+            ApplyDrive();
+        }
+
+        public void RestoreDrive()
+        {
+            Spring = OriginalSpring;
+            Damper = OriginalDamper;
             ApplyDrive();
         }
 

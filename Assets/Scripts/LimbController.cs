@@ -1,3 +1,4 @@
+using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -9,7 +10,7 @@ namespace RedLightQwop
     /// Knees: +1 bends the knee, 0 or less straightens it.
     /// </summary>
     [System.Serializable]
-    public struct LimbInput
+    public struct LimbInput : INetworkSerializable, System.IEquatable<LimbInput>
     {
         public float LeftHip;
         public float RightHip;
@@ -17,6 +18,24 @@ namespace RedLightQwop
         public float RightKnee;
         /// <summary>Optional explicit steering, -1..1. Positive turns right. NPC wander uses it.</summary>
         public float Steer;
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref LeftHip);
+            serializer.SerializeValue(ref RightHip);
+            serializer.SerializeValue(ref LeftKnee);
+            serializer.SerializeValue(ref RightKnee);
+            serializer.SerializeValue(ref Steer);
+        }
+
+        public bool Same(in LimbInput o)
+        {
+            return LeftHip == o.LeftHip && RightHip == o.RightHip && LeftKnee == o.LeftKnee && RightKnee == o.RightKnee && Steer == o.Steer;
+        }
+
+        public bool Equals(LimbInput other) => Same(other);
+        public override bool Equals(object obj) => obj is LimbInput other && Same(other);
+        public override int GetHashCode() => System.HashCode.Combine(LeftHip, RightHip, LeftKnee, RightKnee, Steer);
     }
 
     /// <summary>
@@ -68,16 +87,21 @@ namespace RedLightQwop
 
         void ReadKeyboard()
         {
+            Current = ReadKeyboardInput();
+        }
+
+        /// <summary>QWOP coupling: each key drives one leg one way and the other leg the opposite way.</summary>
+        public static LimbInput ReadKeyboardInput()
+        {
             var k = Keyboard.current;
-            if (k == null) return;
+            if (k == null) return default;
 
             float q = k.qKey.isPressed ? 1f : 0f;
             float w = k.wKey.isPressed ? 1f : 0f;
             float o = k.oKey.isPressed ? 1f : 0f;
             float p = k.pKey.isPressed ? 1f : 0f;
 
-            // QWOP coupling: each key drives one leg one way and the other leg the opposite way.
-            Current = new LimbInput
+            return new LimbInput
             {
                 LeftHip = q - w,
                 RightHip = w - q,

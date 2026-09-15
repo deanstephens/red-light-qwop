@@ -52,10 +52,63 @@ namespace RedLightQwop
         public Rigidbody[] Bodies { get; private set; }
         public bool IsBraking { get; private set; }
 
+        Vector3[] m_InitialLocalPositions;
+        Quaternion[] m_InitialLocalRotations;
+        MeshRenderer[] m_Renderers;
+        Material[] m_OriginalMaterials;
+
         void Awake()
         {
             Bodies = GetComponentsInChildren<Rigidbody>();
             IgnoreSelfCollisions();
+
+            m_InitialLocalPositions = new Vector3[Bodies.Length];
+            m_InitialLocalRotations = new Quaternion[Bodies.Length];
+            for (int i = 0; i < Bodies.Length; i++)
+            {
+                m_InitialLocalPositions[i] = Bodies[i].transform.localPosition;
+                m_InitialLocalRotations[i] = Bodies[i].transform.localRotation;
+            }
+
+            m_Renderers = GetComponentsInChildren<MeshRenderer>();
+            m_OriginalMaterials = new Material[m_Renderers.Length];
+            for (int i = 0; i < m_Renderers.Length; i++) m_OriginalMaterials[i] = m_Renderers[i].sharedMaterial;
+        }
+
+        /// <summary>Undo GoLimp and Tint, and put the doll back in its spawn pose at rest.</summary>
+        public void Restore()
+        {
+            foreach (var muscle in GetComponentsInChildren<Muscle>()) muscle.RestoreDrive();
+            BalanceAssist = true;
+            AllowBraking = true;
+            IsBraking = true;
+            SetBraking(false);
+            RestoreTint();
+            ResetPose();
+        }
+
+        public void ResetPose()
+        {
+            for (int i = 0; i < Bodies.Length; i++)
+            {
+                var b = Bodies[i];
+                b.linearVelocity = Vector3.zero;
+                b.angularVelocity = Vector3.zero;
+                b.transform.localPosition = m_InitialLocalPositions[i];
+                b.transform.localRotation = m_InitialLocalRotations[i];
+                b.position = b.transform.position;
+                b.rotation = b.transform.rotation;
+            }
+            Physics.SyncTransforms();
+        }
+
+        public void RestoreTint()
+        {
+            if (m_Renderers == null) return;
+            for (int i = 0; i < m_Renderers.Length; i++)
+            {
+                if (m_Renderers[i] != null) m_Renderers[i].sharedMaterial = m_OriginalMaterials[i];
+            }
         }
 
         void IgnoreSelfCollisions()
@@ -176,12 +229,13 @@ namespace RedLightQwop
             }
         }
 
-        /// <summary>Recolor every visual on this doll (instantiates materials).</summary>
+        /// <summary>Recolor every visual on this doll (instantiates materials). RestoreTint undoes it.</summary>
         public void Tint(Color color)
         {
-            foreach (var r in GetComponentsInChildren<MeshRenderer>())
+            if (m_Renderers == null) m_Renderers = GetComponentsInChildren<MeshRenderer>();
+            foreach (var r in m_Renderers)
             {
-                r.material.SetColor("_BaseColor", color);
+                if (r != null) r.material.SetColor("_BaseColor", color);
             }
         }
 

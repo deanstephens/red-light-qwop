@@ -3,7 +3,9 @@
     "rootNamespace": "RedLightQwop.Editor",
     "references": [
         "RedLightQwop",
-        "Unity.Cinemachine"
+        "Unity.Cinemachine",
+        "Unity.Netcode.Runtime",
+        "Unity.InputSystem"
     ],
     "includePlatforms": [
         "Editor"

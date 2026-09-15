@@ -38,13 +38,11 @@ namespace RedLightQwop.Tests
             var report = new System.Text.StringBuilder("[Gait] name | distance m | min pelvis y | fell | settle time after release | min y after\n");
             foreach (var kv in k_Gaits)
             {
-                yield return SceneManager.LoadSceneAsync("Game");
-                yield return null;
-                var game = Object.FindAnyObjectByType<GameManager>();
+                GameManager game = null;
+                yield return TestSession.Load(g => game = g, parkRunners: true);
+                game.LocalPlayer.enabled = false; // drive Controller.Current directly
                 var rag = game.Player;
                 var ctl = game.Controller;
-                ctl.UseKeyboard = false;
-                game.ForcePhase(LightPhase.Green);
                 yield return new WaitForSeconds(1f);
 
                 float startZ = rag.Position.z;
@@ -85,5 +83,8 @@ namespace RedLightQwop.Tests
             }
             Debug.Log(report.ToString());
         }
+
+        [UnityTearDown]
+        public IEnumerator TearDown() => TestSession.Teardown();
     }
 }

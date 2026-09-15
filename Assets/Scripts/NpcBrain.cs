@@ -87,7 +87,7 @@ namespace RedLightQwop
         {
             if (Game == null || State != NpcState.Active) return;
 
-            if (Game.State != GameState.Playing)
+            if (!Game.RoundRunning)
             {
                 Controller.Current = default;
                 return;
@@ -206,7 +206,6 @@ namespace RedLightQwop
             Controller.Current = default;
             Controller.InputEnabled = false;
             Ragdoll.GoLimp();
-            Ragdoll.Tint(EliminatedTint);
 
             // A small sideways shove so it visibly topples rather than folding in place.
             Vector3 push = new Vector3((float)m_Rng.NextDouble() * 2f - 1f, 0f, 0.5f).normalized * TopplePush;

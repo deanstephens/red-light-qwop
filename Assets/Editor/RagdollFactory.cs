@@ -1,3 +1,5 @@
+using Unity.Netcode;
+using Unity.Netcode.Components;
 using UnityEngine;
 
 namespace RedLightQwop.Editor
@@ -12,10 +14,11 @@ namespace RedLightQwop.Editor
         const float k_LegX = 0.12f;
         const float k_ArmX = 0.24f;
 
-        public static GameObject Build(Material bodyMaterial, Material accentMaterial, PhysicsMaterial footMaterial)
+        public static GameObject Build(Material bodyMaterial, Material accentMaterial, PhysicsMaterial footMaterial, bool npc = false)
         {
-            var root = new GameObject("Ragdoll");
+            var root = new GameObject(npc ? "NpcRagdoll" : "Ragdoll");
             var ragdoll = root.AddComponent<Ragdoll>();
+            root.AddComponent<NetworkObject>();
 
             // --- Parts ---------------------------------------------------------------------
             var pelvis = Box(root, "Pelvis", new Vector3(0f, 1.05f, 0f), new Vector3(0.32f, 0.2f, 0.2f), 8f, accentMaterial, null);
@@ -65,6 +68,19 @@ namespace RedLightQwop.Editor
 
             var controller = root.AddComponent<LimbController>();
             controller.Ragdoll = ragdoll;
+            controller.UseKeyboard = false;
+
+            var net = root.AddComponent<NetworkRagdoll>();
+            net.IsNpc = npc;
+            net.Ragdoll = ragdoll;
+            net.Controller = controller;
+            if (npc)
+            {
+                var brain = root.AddComponent<NpcBrain>();
+                brain.Ragdoll = ragdoll;
+                brain.Controller = controller;
+                net.Brain = brain;
+            }
 
             return root;
         }
@@ -85,6 +101,17 @@ namespace RedLightQwop.Editor
             rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
             rb.solverIterations = 12;
             rb.solverVelocityIterations = 4;
+
+            // Replicate this part's local pose to clients; NetworkRigidbody makes it kinematic there.
+            var nt = go.AddComponent<NetworkTransform>();
+            nt.InLocalSpace = true;
+            nt.SyncScaleX = nt.SyncScaleY = nt.SyncScaleZ = false;
+            nt.UseHalfFloatPrecision = true;
+            nt.UseQuaternionCompression = true;
+            nt.Interpolate = true;
+            nt.PositionThreshold = 0.005f;
+            nt.RotAngleThreshold = 0.5f;
+            go.AddComponent<NetworkRigidbody>();
             return go;
         }
 
