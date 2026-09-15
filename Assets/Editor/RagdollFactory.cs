@@ -39,8 +39,9 @@ namespace RedLightQwop.Editor
             ragdoll.Spine = Joint(torso, pelvis, new Vector3(0f, -0.25f, 0f), -30f, 30f, 20f, 20f, 1200f, 100f, "Spine");
             ragdoll.Neck = Joint(head, torso, new Vector3(0f, -0.15f, 0f), -30f, 30f, 30f, 30f, 200f, 20f, "Neck");
 
-            ragdoll.LeftHip = Joint(lUpperLeg, pelvis, new Vector3(0f, 0.225f, 0f), -100f, 45f, 15f, 15f, 1500f, 120f, "LeftHip");
-            ragdoll.RightHip = Joint(rUpperLeg, pelvis, new Vector3(0f, 0.225f, 0f), -100f, 45f, 15f, 15f, 1500f, 120f, "RightHip");
+            // Y limit is generous so the hips can twist for steering.
+            ragdoll.LeftHip = Joint(lUpperLeg, pelvis, new Vector3(0f, 0.225f, 0f), -100f, 45f, 40f, 15f, 1500f, 120f, "LeftHip");
+            ragdoll.RightHip = Joint(rUpperLeg, pelvis, new Vector3(0f, 0.225f, 0f), -100f, 45f, 40f, 15f, 1500f, 120f, "RightHip");
             ragdoll.LeftKnee = Joint(lLowerLeg, lUpperLeg, new Vector3(0f, 0.25f, 0f), -3f, 130f, 3f, 3f, 1500f, 120f, "LeftKnee");
             ragdoll.RightKnee = Joint(rLowerLeg, rUpperLeg, new Vector3(0f, 0.25f, 0f), -3f, 130f, 3f, 3f, 1500f, 120f, "RightKnee");
 

@@ -40,6 +40,8 @@ namespace RedLightQwop
         public float UprightSpring = 900f;
         public float UprightDamper = 100f;
         [Range(0f, 1f)] public float TorsoShare = 0.5f;
+        [Tooltip("How strongly the assist also pulls the doll back to facing down the course (+Z). 0 leaves heading entirely to the physics, so leg swings and bumps make it turn.")]
+        [Range(0f, 1f)] public float YawAssist = 0f;
 
         [Header("Braking")]
         [Tooltip("Linear damping applied to every part while no limb input is held, so the doll stops quickly when the player freezes.")]
@@ -79,15 +81,42 @@ namespace RedLightQwop
         {
             if (body == null || share <= 0f) return;
 
-            // Rotation that would take the body back to identity (upright, facing +Z).
-            Quaternion error = Quaternion.Inverse(body.rotation);
-            error.ToAngleAxis(out float angle, out Vector3 axis);
-            if (angle > 180f) angle -= 360f;
-            if (float.IsNaN(axis.x) || float.IsInfinity(axis.x)) return;
+            Vector3 torque = Vector3.zero;
 
-            Vector3 torque = axis.normalized * (angle * Mathf.Deg2Rad * UprightSpring)
-                             - body.angularVelocity * UprightDamper;
+            // Tilt: the smallest rotation that brings the body's up axis back to world up.
+            Vector3 bodyUp = body.rotation * Vector3.up;
+            Quaternion tiltFix = Quaternion.FromToRotation(bodyUp, Vector3.up);
+            tiltFix.ToAngleAxis(out float tiltAngle, out Vector3 tiltAxis);
+            if (tiltAngle > 180f) tiltAngle -= 360f;
+            if (Mathf.Abs(tiltAngle) > 0.01f && !float.IsNaN(tiltAxis.x) && !float.IsInfinity(tiltAxis.x))
+            {
+                torque += tiltAxis.normalized * (tiltAngle * Mathf.Deg2Rad * UprightSpring);
+            }
+
+            // Heading: optional pull toward +Z about the world up axis.
+            if (YawAssist > 0f)
+            {
+                Vector3 forward = Vector3.ProjectOnPlane(tiltFix * (body.rotation * Vector3.forward), Vector3.up);
+                if (forward.sqrMagnitude > 1e-4f)
+                {
+                    float yaw = Vector3.SignedAngle(forward, Vector3.forward, Vector3.up);
+                    torque += Vector3.up * (yaw * Mathf.Deg2Rad * UprightSpring * YawAssist);
+                }
+            }
+
+            torque -= body.angularVelocity * UprightDamper;
             body.AddTorque(torque * share, ForceMode.Force);
+        }
+
+        /// <summary>Heading of the pelvis in degrees: 0 faces down the course, positive turns right.</summary>
+        public float Heading
+        {
+            get
+            {
+                Vector3 forward = Vector3.ProjectOnPlane(Pelvis.rotation * Vector3.forward, Vector3.up);
+                if (forward.sqrMagnitude < 1e-4f) return 0f;
+                return Vector3.SignedAngle(Vector3.forward, forward, Vector3.up);
+            }
         }
 
         /// <summary>Speed of the pelvis, used for red-light movement detection.</summary>

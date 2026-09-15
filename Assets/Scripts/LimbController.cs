@@ -15,6 +15,8 @@ namespace RedLightQwop
         public float RightHip;
         public float LeftKnee;
         public float RightKnee;
+        /// <summary>Optional explicit steering, -1..1. Positive turns right. NPC wander uses it.</summary>
+        public float Steer;
     }
 
     /// <summary>
@@ -31,6 +33,14 @@ namespace RedLightQwop
         public float HipBackAngle = 35f;
         public float KneeBendAngle = 100f;
         public float ArmSwingAngle = 40f;
+
+        [Header("Turning")]
+        [Tooltip("Yaw applied to both hip joints at full steer, in degrees. Twisting the planted thigh turns the body.")]
+        public float HipTurnAngle = 30f;
+        [Tooltip("How much a lopsided hip swing (one leg far forward) steers by itself. 0 keeps the legs straight unless Steer is set.")]
+        [Range(0f, 1f)] public float SwingSteer = 0.6f;
+        [Tooltip("Flip if positive steer turns the doll left in practice.")]
+        public float SteerSign = 1f;
 
         [Header("Input")]
         public bool InputEnabled = true;
@@ -52,7 +62,8 @@ namespace RedLightQwop
         static bool IsNeutral(LimbInput i)
         {
             return Mathf.Approximately(i.LeftHip, 0f) && Mathf.Approximately(i.RightHip, 0f)
-                && Mathf.Approximately(i.LeftKnee, 0f) && Mathf.Approximately(i.RightKnee, 0f);
+                && Mathf.Approximately(i.LeftKnee, 0f) && Mathf.Approximately(i.RightKnee, 0f)
+                && Mathf.Approximately(i.Steer, 0f);
         }
 
         void ReadKeyboard()
@@ -79,9 +90,13 @@ namespace RedLightQwop
         {
             if (Ragdoll == null) return;
 
+            // Big lopsided swings twist the hips, so the doll drifts off a straight line.
+            float steer = input.Steer + SwingSteer * 0.5f * (input.LeftHip - input.RightHip);
+            float hipYaw = SteerSign * Mathf.Clamp(steer, -1f, 1f) * HipTurnAngle;
+
             // Positive X rotation swings a downward-hanging limb backward, so forward is negative.
-            SetPitch(Ragdoll.LeftHip, -HipAngle(input.LeftHip));
-            SetPitch(Ragdoll.RightHip, -HipAngle(input.RightHip));
+            SetHip(Ragdoll.LeftHip, -HipAngle(input.LeftHip), hipYaw);
+            SetHip(Ragdoll.RightHip, -HipAngle(input.RightHip), hipYaw);
             SetPitch(Ragdoll.LeftKnee, KneeAngle(input.LeftKnee));
             SetPitch(Ragdoll.RightKnee, KneeAngle(input.RightKnee));
 
@@ -108,6 +123,11 @@ namespace RedLightQwop
         static void SetPitch(Muscle muscle, float degrees)
         {
             if (muscle != null) muscle.SetTargetEuler(new Vector3(degrees, 0f, 0f));
+        }
+
+        static void SetHip(Muscle muscle, float pitch, float yaw)
+        {
+            if (muscle != null) muscle.SetTargetEuler(new Vector3(pitch, yaw, 0f));
         }
     }
 }

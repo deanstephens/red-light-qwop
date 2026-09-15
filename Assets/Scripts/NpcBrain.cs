@@ -31,6 +31,14 @@ namespace RedLightQwop
         [Range(0f, 1f)] public float LapseChance = 0.3f;
         public Vector2 LapseExtra = new Vector2(0.4f, 1.0f);
 
+        [Header("Wander")]
+        [Tooltip("How far off a straight line this runner drifts, 0..1. Picks a new drift every few seconds.")]
+        [Range(0f, 1f)] public float Wander = 0.5f;
+        public Vector2 WanderInterval = new Vector2(1.5f, 4f);
+        [Tooltip("Steering applied per degree of heading error, pulling the runner back toward the finish.")]
+        public float HeadingCorrection = 0.02f;
+        public float MaxHeadingError = 40f;
+
         [Header("Elimination")]
         public Color EliminatedTint = new Color(0.45f, 0.4f, 0.4f);
         public float TopplePush = 50f;
@@ -55,6 +63,8 @@ namespace RedLightQwop
         bool m_SawRed;
         float m_MovingTime;
         float m_DownTime;
+        float m_WanderTarget;
+        float m_WanderClock;
 
         public void Seed(int seed) => m_Rng = new System.Random(seed);
 
@@ -151,13 +161,32 @@ namespace RedLightQwop
                     m_BeatIndex = (m_BeatIndex + 1) % k_Stride.Length;
                     m_BeatLength = StepTime + ((float)m_Rng.NextDouble() * 2f - 1f) * TempoJitter;
                 }
-                Controller.Current = k_Stride[m_BeatIndex];
+                var input = k_Stride[m_BeatIndex];
+                input.Steer = ComputeSteer(dt);
+                Controller.Current = input;
             }
             else
             {
                 Controller.Current = default;
                 m_BeatClock = 0f;
             }
+        }
+
+        /// <summary>Random drift, plus a pull back toward the finish when the heading strays too far.</summary>
+        float ComputeSteer(float dt)
+        {
+            m_WanderClock -= dt;
+            if (m_WanderClock <= 0f)
+            {
+                m_WanderClock = Mathf.Lerp(WanderInterval.x, WanderInterval.y, (float)m_Rng.NextDouble());
+                // Half the time run straight, otherwise drift one way or the other.
+                m_WanderTarget = m_Rng.NextDouble() < 0.5 ? 0f : ((float)m_Rng.NextDouble() * 2f - 1f) * Wander;
+            }
+
+            float heading = Ragdoll.Heading;
+            float correction = -Mathf.Clamp(heading, -MaxHeadingError, MaxHeadingError) * HeadingCorrection;
+            if (Mathf.Abs(heading) > MaxHeadingError) return Mathf.Clamp(correction, -1f, 1f);
+            return Mathf.Clamp(m_WanderTarget + correction, -1f, 1f);
         }
 
         float RollReaction()
