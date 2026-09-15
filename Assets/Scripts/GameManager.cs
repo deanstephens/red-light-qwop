@@ -1,7 +1,11 @@
 using System.Collections.Generic;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Threading.Tasks;
 using Unity.Cinemachine;
+using Unity.Services.Authentication;
+using Unity.Services.Core;
+using Unity.Services.Multiplayer;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
@@ -62,7 +66,9 @@ namespace RedLightQwop
 
         [Header("Network")]
         public ushort Port = 7777;
-        [Tooltip("Honour --host, --join <ip>, --solo and --port <n> on the command line.")]
+        [Tooltip("Players per online (relay) session, including the host.")]
+        public int MaxPlayers = 4;
+        [Tooltip("Honour --host, --join <ip>, --solo, --port <n>, --relay-host and --relay-join <code> on the command line.")]
         public bool UseCommandLine = true;
 
         public const string PlayerLayerName = "Player";
@@ -89,6 +95,10 @@ namespace RedLightQwop
         public bool SessionActive => NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening;
         public bool LocalInputAllowed => RoundRunning && (Menu == null || !Menu.IsOpen);
         public string SessionLabel { get; private set; } = "";
+        /// <summary>Join code of the current online session, or null when playing direct/solo.</summary>
+        public string JoinCode { get; private set; }
+        public bool IsConnecting { get; private set; }
+        public event System.Action<string> SessionStatusChanged;
 
         public int NpcCount => NpcRagdolls.Count;
         public int NpcActiveCount
@@ -154,19 +164,23 @@ namespace RedLightQwop
         void HandleCommandLine()
         {
             var args = System.Environment.GetCommandLineArgs();
-            string join = null;
-            bool host = false, solo = false;
+            string join = null, relayJoin = null;
+            bool host = false, solo = false, relayHost = false;
             for (int i = 0; i < args.Length; i++)
             {
                 switch (args[i])
                 {
                     case "--host": host = true; break;
                     case "--solo": solo = true; break;
+                    case "--relay-host": relayHost = true; break;
                     case "--join": if (i + 1 < args.Length) join = args[++i]; break;
+                    case "--relay-join": if (i + 1 < args.Length) relayJoin = args[++i]; break;
                     case "--port": if (i + 1 < args.Length && ushort.TryParse(args[i + 1], out var p)) { Port = p; i++; } break;
                 }
             }
-            if (join != null) StartClient(join);
+            if (relayJoin != null) _ = StartClientRelayAsync(relayJoin);
+            else if (relayHost) _ = StartHostRelayAsync();
+            else if (join != null) StartClient(join);
             else if (host || solo) StartHost();
         }
 
@@ -223,9 +237,8 @@ namespace RedLightQwop
             var transport = (UnityTransport)nm.NetworkConfig.NetworkTransport;
             transport.SetConnectionData("127.0.0.1", Port, "0.0.0.0");
             bool ok = nm.StartHost();
-            SessionLabel = ok ? $"hosting {LocalIPv4()}:{Port}" : "failed to host";
+            SetStatus(ok ? $"hosting {LocalIPv4()}:{Port}" : "failed to host");
             if (ok && Menu != null) Menu.Close();
-            Debug.Log($"[Net] StartHost -> {ok} ({SessionLabel})");
             return ok;
         }
 
@@ -238,17 +251,136 @@ namespace RedLightQwop
             var transport = (UnityTransport)nm.NetworkConfig.NetworkTransport;
             transport.SetConnectionData(address, Port);
             bool ok = nm.StartClient();
-            SessionLabel = ok ? $"joining {address}:{Port}" : "failed to connect";
+            SetStatus(ok ? $"joining {address}:{Port}" : "failed to connect");
             if (ok && Menu != null) Menu.Close();
-            Debug.Log($"[Net] StartClient {address}:{Port} -> {ok}");
             return ok;
         }
 
         public void EndSession()
         {
+            if (m_Session != null)
+            {
+                var session = m_Session;
+                m_Session = null;
+                _ = session.LeaveAsync();
+            }
             var nm = NetworkManager.Singleton;
             if (nm != null && nm.IsListening) nm.Shutdown();
             SessionLabel = "";
+            JoinCode = null;
+        }
+
+        // --- Online sessions through Unity Relay ---------------------------------------------
+        // The Multiplayer Services SDK allocates a relay, configures the UnityTransport and starts
+        // the NetworkManager as host or client itself, so the same spawn callbacks run as for a
+        // direct connection. Players never need to open ports.
+
+        ISession m_Session;
+
+        void SetStatus(string text)
+        {
+            SessionLabel = text;
+            Debug.Log($"[Net] {text}");
+            SessionStatusChanged?.Invoke(text);
+        }
+
+        async Task EnsureServicesAsync()
+        {
+            if (UnityServices.State != ServicesInitializationState.Initialized)
+            {
+                await UnityServices.InitializeAsync();
+            }
+            if (!AuthenticationService.Instance.IsSignedIn)
+            {
+                await AuthenticationService.Instance.SignInAnonymouslyAsync();
+            }
+        }
+
+        /// <summary>Host an online session. Returns the join code, or null on failure.</summary>
+        public async Task<string> StartHostRelayAsync()
+        {
+            var nm = EnsureNetworkManager();
+            if (nm.IsListening || IsConnecting) return null;
+            IsConnecting = true;
+            try
+            {
+                SetStatus("signing in...");
+                await EnsureServicesAsync();
+                SetStatus("creating online session...");
+                var options = new SessionOptions { Name = "RedLightQwop", MaxPlayers = Mathf.Max(1, MaxPlayers) }.WithRelayNetwork();
+                var session = await MultiplayerService.Instance.CreateSessionAsync(options);
+                m_Session = session;
+                JoinCode = session.Code;
+                session.RemovedFromSession += OnRemovedFromSession;
+                session.Deleted += OnRemovedFromSession;
+                SetStatus($"online, join code {JoinCode}");
+                if (Menu != null) Menu.Close();
+                return JoinCode;
+            }
+            catch (SessionException e)
+            {
+                SetStatus($"online hosting failed: {e.Error} - {e.Message}");
+                if (Menu != null) Menu.Open(SessionLabel);
+                return null;
+            }
+            catch (System.Exception e)
+            {
+                SetStatus($"online hosting failed: {e.Message}");
+                if (Menu != null) Menu.Open(SessionLabel);
+                return null;
+            }
+            finally
+            {
+                IsConnecting = false;
+            }
+        }
+
+        /// <summary>Join an online session by its code.</summary>
+        public async Task<bool> StartClientRelayAsync(string code)
+        {
+            var nm = EnsureNetworkManager();
+            if (nm.IsListening || IsConnecting) return false;
+            code = (code ?? "").Trim().ToUpperInvariant();
+            if (code.Length == 0) { SetStatus("enter a join code"); return false; }
+            IsConnecting = true;
+            try
+            {
+                SetStatus("signing in...");
+                await EnsureServicesAsync();
+                SetStatus($"joining {code}...");
+                var session = await MultiplayerService.Instance.JoinSessionByCodeAsync(code);
+                m_Session = session;
+                JoinCode = session.Code;
+                session.RemovedFromSession += OnRemovedFromSession;
+                session.Deleted += OnRemovedFromSession;
+                SetStatus($"online, joined {code}");
+                if (Menu != null) Menu.Close();
+                return true;
+            }
+            catch (SessionException e)
+            {
+                SetStatus($"join failed: {e.Error} - {e.Message}");
+                if (Menu != null) Menu.Open(SessionLabel);
+                return false;
+            }
+            catch (System.Exception e)
+            {
+                SetStatus($"join failed: {e.Message}");
+                if (Menu != null) Menu.Open(SessionLabel);
+                return false;
+            }
+            finally
+            {
+                IsConnecting = false;
+            }
+        }
+
+        void OnRemovedFromSession()
+        {
+            m_Session = null;
+            JoinCode = null;
+            SetStatus("online session ended");
+            if (Menu != null) Menu.Open(SessionLabel);
         }
 
         public static string LocalIPv4()
@@ -290,8 +422,7 @@ namespace RedLightQwop
             }
             if (NetworkManager.Singleton.LocalClientId == clientId && !IsServer)
             {
-                SessionLabel = $"connected to host (client {clientId})";
-                Debug.Log($"[Net] Connected as client {clientId}");
+                SetStatus(JoinCode != null ? $"online, joined {JoinCode} (client {clientId})" : $"connected to host (client {clientId})");
             }
         }
 
@@ -299,7 +430,7 @@ namespace RedLightQwop
         {
             if (!IsServer && NetworkManager.Singleton != null && NetworkManager.Singleton.LocalClientId == clientId)
             {
-                SessionLabel = "disconnected";
+                SetStatus("disconnected");
                 if (Menu != null) Menu.Open("Disconnected from host");
             }
         }

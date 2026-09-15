@@ -5,7 +5,10 @@
         "Unity.InputSystem",
         "Unity.Netcode.Runtime",
         "Unity.Networking.Transport",
-        "Unity.Cinemachine"
+        "Unity.Cinemachine",
+        "Unity.Services.Multiplayer",
+        "Unity.Services.Core",
+        "Unity.Services.Authentication"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

@@ -332,7 +332,7 @@ namespace RedLightQwop.Editor
             prt.anchorMin = new Vector2(0.5f, 0.5f);
             prt.anchorMax = new Vector2(0.5f, 0.5f);
             prt.pivot = new Vector2(0.5f, 0.5f);
-            prt.sizeDelta = new Vector2(560f, 440f);
+            prt.sizeDelta = new Vector2(560f, 520f);
             var bg = panel.AddComponent<Image>();
             bg.color = new Color(0.05f, 0.08f, 0.12f, 0.92f);
 
@@ -345,10 +345,11 @@ namespace RedLightQwop.Editor
             sub.text = "Q / W hips   O / P knees   R restart";
             sub.color = new Color(1f, 1f, 1f, 0.7f);
 
-            menu.SoloButton = MakeButton(panel.transform, "SoloButton", "Play solo", new Vector2(0f, 30f));
-            menu.HostButton = MakeButton(panel.transform, "HostButton", "Host a game", new Vector2(0f, -40f));
-            menu.AddressField = MakeInputField(panel.transform, "AddressField", "host address", new Vector2(-90f, -110f), new Vector2(260f, 48f));
-            menu.JoinButton = MakeButton(panel.transform, "JoinButton", "Join", new Vector2(130f, -110f), new Vector2(160f, 48f));
+            menu.SoloButton = MakeButton(panel.transform, "SoloButton", "Play solo", new Vector2(0f, 70f));
+            menu.HostOnlineButton = MakeButton(panel.transform, "HostOnlineButton", "Host online (join code)", new Vector2(0f, 0f));
+            menu.HostButton = MakeButton(panel.transform, "HostButton", "Host on LAN", new Vector2(0f, -70f));
+            menu.AddressField = MakeInputField(panel.transform, "AddressField", "join code or IP address", new Vector2(-90f, -140f), new Vector2(260f, 48f));
+            menu.JoinButton = MakeButton(panel.transform, "JoinButton", "Join", new Vector2(130f, -140f), new Vector2(160f, 48f));
             menu.StatusText = MakeText(panel.transform, "Status", new Vector2(0.5f, 0f), new Vector2(0f, 24f), new Vector2(520f, 30f), 18, TextAnchor.MiddleCenter, FontStyle.Normal);
             menu.StatusText.color = new Color(1f, 1f, 1f, 0.7f);
             return menu;
@@ -396,7 +397,7 @@ namespace RedLightQwop.Editor
             field.targetGraphic = img;
             field.textComponent = text;
             field.placeholder = ph;
-            field.text = "127.0.0.1";
+            field.text = "";
             return field;
         }
 

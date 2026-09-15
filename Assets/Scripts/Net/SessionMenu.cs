@@ -1,14 +1,20 @@
+using System.Net;
 using UnityEngine;
 using UnityEngine.UI;
 
 namespace RedLightQwop
 {
-    /// <summary>Start-of-game panel: play solo, host, or join a host by address.</summary>
+    /// <summary>
+    /// Start-of-game panel. Solo and LAN hosting connect directly; "Host online" creates a
+    /// relayed session with a join code that works across the internet without port
+    /// forwarding. The Join field accepts either an IP address or a join code.
+    /// </summary>
     public class SessionMenu : MonoBehaviour
     {
         public GameObject Panel;
         public Button SoloButton;
         public Button HostButton;
+        public Button HostOnlineButton;
         public Button JoinButton;
         public InputField AddressField;
         public Text StatusText;
@@ -18,15 +24,37 @@ namespace RedLightQwop
         void Start()
         {
             var game = GameManager.Instance;
+            if (game == null) return;
+            game.SessionStatusChanged += Status;
+
             if (SoloButton != null) SoloButton.onClick.AddListener(() => { if (!game.StartSolo()) Status("Could not start"); });
             if (HostButton != null) HostButton.onClick.AddListener(() => { if (!game.StartHost()) Status("Could not host"); });
+            if (HostOnlineButton != null) HostOnlineButton.onClick.AddListener(() => { _ = game.StartHostRelayAsync(); });
             if (JoinButton != null) JoinButton.onClick.AddListener(() =>
             {
-                string addr = AddressField != null && !string.IsNullOrWhiteSpace(AddressField.text) ? AddressField.text.Trim() : "127.0.0.1";
-                if (!game.StartClient(addr)) Status("Could not connect");
-                else Status($"Connecting to {addr}...");
+                string text = AddressField != null ? AddressField.text.Trim() : "";
+                if (text.Length == 0) { Status("Enter a host address or a join code"); return; }
+                if (LooksLikeAddress(text))
+                {
+                    if (!game.StartClient(text)) Status("Could not connect");
+                }
+                else
+                {
+                    _ = game.StartClientRelayAsync(text);
+                }
             });
-            if (StatusText != null) StatusText.text = $"Your address: {GameManager.LocalIPv4()}";
+            if (StatusText != null) StatusText.text = $"Your LAN address: {GameManager.LocalIPv4()}";
+        }
+
+        void OnDestroy()
+        {
+            var game = GameManager.Instance;
+            if (game != null) game.SessionStatusChanged -= Status;
+        }
+
+        static bool LooksLikeAddress(string text)
+        {
+            return text.Contains(".") || text.Contains(":") || IPAddress.TryParse(text, out _) || text.Equals("localhost", System.StringComparison.OrdinalIgnoreCase);
         }
 
         public void Open(string status = null)
