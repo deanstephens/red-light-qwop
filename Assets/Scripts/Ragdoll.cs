@@ -52,6 +52,12 @@ namespace RedLightQwop
         public Rigidbody[] Bodies { get; private set; }
         public bool IsBraking { get; private set; }
 
+        /// <summary>Current muscle and balance multipliers (1 = the prefab's tuning).</summary>
+        public float MuscleScale { get; private set; } = 1f;
+        public float BalanceScale { get; private set; } = 1f;
+        float m_BaseUprightSpring;
+        float m_BaseUprightDamper;
+
         Vector3[] m_InitialLocalPositions;
         Quaternion[] m_InitialLocalRotations;
         MeshRenderer[] m_Renderers;
@@ -61,6 +67,8 @@ namespace RedLightQwop
         {
             Bodies = GetComponentsInChildren<Rigidbody>();
             IgnoreSelfCollisions();
+            m_BaseUprightSpring = UprightSpring;
+            m_BaseUprightDamper = UprightDamper;
 
             m_InitialLocalPositions = new Vector3[Bodies.Length];
             m_InitialLocalRotations = new Quaternion[Bodies.Length];
@@ -75,10 +83,28 @@ namespace RedLightQwop
             for (int i = 0; i < m_Renderers.Length; i++) m_OriginalMaterials[i] = m_Renderers[i].sharedMaterial;
         }
 
+        /// <summary>
+        /// Scale every muscle's drive and the balance assist. Lower values make the doll floppier
+        /// and harder to control; this is what difficulty changes. Persists through Restore().
+        /// </summary>
+        public void ApplyStrength(float muscleScale, float balanceScale)
+        {
+            MuscleScale = Mathf.Max(0.05f, muscleScale);
+            BalanceScale = Mathf.Max(0f, balanceScale);
+            foreach (var muscle in GetComponentsInChildren<Muscle>())
+            {
+                muscle.Spring = muscle.OriginalSpring * MuscleScale;
+                muscle.Damper = muscle.OriginalDamper * MuscleScale;
+                muscle.ApplyDrive();
+            }
+            UprightSpring = m_BaseUprightSpring * BalanceScale;
+            UprightDamper = m_BaseUprightDamper * Mathf.Max(0.4f, BalanceScale);
+        }
+
         /// <summary>Undo GoLimp and Tint, and put the doll back in its spawn pose at rest.</summary>
         public void Restore()
         {
-            foreach (var muscle in GetComponentsInChildren<Muscle>()) muscle.RestoreDrive();
+            ApplyStrength(MuscleScale, BalanceScale);
             BalanceAssist = true;
             AllowBraking = true;
             IsBraking = true;

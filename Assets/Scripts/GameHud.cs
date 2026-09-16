@@ -26,7 +26,7 @@ namespace RedLightQwop
             if (InfoText != null)
             {
                 string runners = game.NpcCount > 0 ? $"     runners {game.NpcActiveCount}/{game.NpcCount}" : "";
-                InfoText.text = $"{game.DistanceToFinish:0.0} m to go     {Mathf.CeilToInt(game.TimeRemaining)} s{runners}";
+                InfoText.text = $"{game.DistanceToFinish:0.0} m to go     {Mathf.CeilToInt(game.TimeRemaining)} s{runners}     {game.CurrentDifficulty.ToString().ToLowerInvariant()}";
             }
 
             if (CenterText != null)
@@ -51,7 +51,8 @@ namespace RedLightQwop
             if (HintText != null)
             {
                 string session = string.IsNullOrEmpty(game.SessionLabel) ? "" : $"      |      {game.SessionLabel}, {game.Players.Count} player{(game.Players.Count == 1 ? "" : "s")}";
-                HintText.text = $"Q / W  hips      O / P  knees      R  restart{session}";
+                string difficultyHint = game.IsServer ? "      [ ]  difficulty" : "";
+                HintText.text = $"Q / W  hips      O / P  knees      R  restart{difficultyHint}{session}";
             }
         }
     }

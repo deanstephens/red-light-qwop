@@ -15,6 +15,7 @@ namespace RedLightQwop
 {
     public enum LightPhase { Green, Red }
     public enum GameState { Playing, Won, Eliminated, TimedOut }
+    public enum Difficulty { Easy, Normal, Hard, Brutal }
 
     /// <summary>
     /// Owns the session (host or client) and, on the host, runs the Red Light, Green Light
@@ -64,10 +65,21 @@ namespace RedLightQwop
         public bool CharactersCollide = true;
         public Color EliminatedTint = new Color(0.45f, 0.4f, 0.4f);
 
+        [Header("Difficulty (host decides, applies to every doll)")]
+        public Difficulty StartDifficulty = Difficulty.Normal;
+        [Tooltip("Per difficulty: x = muscle strength multiplier, y = balance assist multiplier. Index order: Easy, Normal, Hard, Brutal.")]
+        public Vector2[] DifficultyStrength =
+        {
+            new Vector2(1.3f, 1.6f),
+            new Vector2(1.0f, 1.0f),
+            new Vector2(0.75f, 0.55f),
+            new Vector2(0.55f, 0.25f),
+        };
+
         [Header("Network")]
         public ushort Port = 7777;
-        [Tooltip("Browser builds cannot open ports, so every session there goes through the relay, and the simulation is lighter.")]
-        public float WebPhysicsTimestep = 0.02f;
+        [Tooltip("Browser builds cannot open ports, so every session there goes through the relay. Jointed ragdolls need the 10 ms step even there.")]
+        public float WebPhysicsTimestep = 0.01f;
         public int WebNpcCount = 6;
         [Tooltip("Players per online (relay) session, including the host.")]
         public int MaxPlayers = 4;
@@ -105,6 +117,16 @@ namespace RedLightQwop
         public string JoinCode { get; private set; }
         public bool IsConnecting { get; private set; }
         public event System.Action<string> SessionStatusChanged;
+
+        public Difficulty CurrentDifficulty => Net != null ? (Difficulty)Net.Difficulty.Value : StartDifficulty;
+        public Vector2 CurrentStrength
+        {
+            get
+            {
+                int i = Mathf.Clamp((int)CurrentDifficulty, 0, DifficultyStrength.Length - 1);
+                return DifficultyStrength.Length > 0 ? DifficultyStrength[i] : Vector2.one;
+            }
+        }
 
         public int NpcCount => NpcRagdolls.Count;
         public int NpcActiveCount
@@ -440,8 +462,33 @@ namespace RedLightQwop
         {
             var stateGo = Instantiate(GameStatePrefab);
             stateGo.GetComponent<NetworkObject>().Spawn();
+            if (Net != null) Net.Difficulty.Value = (int)StartDifficulty;
             SpawnNpcs();
             BeginRound();
+        }
+
+        /// <summary>Host only. Changes the strength of every doll, now and for dolls spawned later.</summary>
+        public void SetDifficulty(Difficulty difficulty)
+        {
+            if (!IsServer || Net == null) return;
+            Net.Difficulty.Value = (int)difficulty;
+            foreach (var p in Players) ApplyDifficultyTo(p);
+            foreach (var n in NpcRagdolls) ApplyDifficultyTo(n);
+            SetStatus($"difficulty {difficulty}");
+        }
+
+        public void CycleDifficulty(int step)
+        {
+            int count = System.Enum.GetValues(typeof(Difficulty)).Length;
+            int next = ((int)CurrentDifficulty + step + count) % count;
+            SetDifficulty((Difficulty)next);
+        }
+
+        void ApplyDifficultyTo(NetworkRagdoll doll)
+        {
+            if (doll == null || doll.Ragdoll == null) return;
+            var strength = CurrentStrength;
+            doll.Ragdoll.ApplyStrength(strength.x, strength.y);
         }
 
         void OnClientConnected(ulong clientId)
@@ -473,6 +520,7 @@ namespace RedLightQwop
 
         public void Register(NetworkRagdoll doll)
         {
+            if (IsServer) ApplyDifficultyTo(doll);
             if (doll.IsNpc)
             {
                 if (!NpcRagdolls.Contains(doll)) NpcRagdolls.Add(doll);
@@ -554,6 +602,12 @@ namespace RedLightQwop
             {
                 if (IsServer) RestartRound();
                 else if (Net != null) Net.RequestRestartRpc();
+            }
+
+            if (keyboard != null && IsServer && Net != null && (Menu == null || !Menu.IsOpen))
+            {
+                if (keyboard.rightBracketKey.wasPressedThisFrame) CycleDifficulty(+1);
+                if (keyboard.leftBracketKey.wasPressedThisFrame) CycleDifficulty(-1);
             }
 
             if (IsServer && Net != null && Net.RoundRunning.Value) ServerTick(Time.deltaTime);

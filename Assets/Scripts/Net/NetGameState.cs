@@ -13,6 +13,7 @@ namespace RedLightQwop
         public NetworkVariable<float> TimeRemaining = new NetworkVariable<float>(0f);
         public NetworkVariable<bool> RoundRunning = new NetworkVariable<bool>(false);
         public NetworkVariable<int> Round = new NetworkVariable<int>(0);
+        public NetworkVariable<int> Difficulty = new NetworkVariable<int>((int)RedLightQwop.Difficulty.Normal);
 
         public LightPhase LightPhase => (LightPhase)Phase.Value;
 

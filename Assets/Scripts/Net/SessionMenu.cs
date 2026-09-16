@@ -18,6 +18,9 @@ namespace RedLightQwop
         public Button JoinButton;
         public InputField AddressField;
         public Text StatusText;
+        public Button[] DifficultyButtons;
+        public Color SelectedColor = new Color(0.95f, 0.6f, 0.15f);
+        public Color UnselectedColor = new Color(0.25f, 0.3f, 0.38f);
 
         public bool IsOpen => Panel != null && Panel.activeSelf;
 
@@ -43,6 +46,21 @@ namespace RedLightQwop
                     _ = game.StartClientRelayAsync(text);
                 }
             });
+            if (DifficultyButtons != null)
+            {
+                for (int i = 0; i < DifficultyButtons.Length; i++)
+                {
+                    int index = i;
+                    if (DifficultyButtons[i] == null) continue;
+                    DifficultyButtons[i].onClick.AddListener(() =>
+                    {
+                        game.StartDifficulty = (Difficulty)index;
+                        RefreshDifficulty();
+                    });
+                }
+                RefreshDifficulty();
+            }
+
             if (GameManager.IsWebBuild)
             {
                 // No LAN hosting in a browser; solo and host both create an online session.
@@ -54,6 +72,18 @@ namespace RedLightQwop
             else if (StatusText != null)
             {
                 StatusText.text = $"Your LAN address: {GameManager.LocalIPv4()}";
+            }
+        }
+
+        void RefreshDifficulty()
+        {
+            var game = GameManager.Instance;
+            if (game == null || DifficultyButtons == null) return;
+            for (int i = 0; i < DifficultyButtons.Length; i++)
+            {
+                if (DifficultyButtons[i] == null) continue;
+                var img = DifficultyButtons[i].GetComponent<Image>();
+                if (img != null) img.color = (int)game.StartDifficulty == i ? SelectedColor : UnselectedColor;
             }
         }
 
