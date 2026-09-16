@@ -80,7 +80,15 @@ namespace RedLightQwop
         public ushort Port = 7777;
         [Tooltip("Browser builds cannot open ports, so every session there goes through the relay. Jointed ragdolls need the 10 ms step even there.")]
         public float WebPhysicsTimestep = 0.01f;
-        public int WebNpcCount = 6;
+        public int WebNpcCount = 4;
+        [Tooltip("Browser builds: most simulated time one frame may catch up. Caps physics steps per frame so a slow tab goes into slow motion instead of freezing.")]
+        public float WebMaxDeltaTime = 0.05f;
+        [Tooltip("Seconds without traffic before a connection is considered lost. Generous so a briefly hidden browser tab does not end the session.")]
+        public int DisconnectTimeoutSeconds = 120;
+        [Tooltip("Network ticks per second when a browser hosts; lower halves the upload compared with the desktop's 30.")]
+        public int WebTickRate = 20;
+        [Tooltip("Browser builds run on requestAnimationFrame, which browsers stop for hidden tabs. Setting a target frame rate switches Unity to a timer loop that keeps ticking (slowly) while hidden, so a host that alt-tabs does not drop everyone.")]
+        public int WebSessionFrameRate = 60;
         [Tooltip("Players per online (relay) session, including the host.")]
         public int MaxPlayers = 4;
         [Tooltip("Honour --host, --join <ip>, --solo, --port <n>, --relay-host and --relay-join <code> on the command line.")]
@@ -148,6 +156,12 @@ namespace RedLightQwop
             }
         }
 
+        /// <summary>Smoothed frames per second, for the HUD and for diagnosing slow hosts.</summary>
+        public float Fps { get; private set; }
+        /// <summary>Fraction of real time the simulation is keeping up with (1 = full speed).</summary>
+        public float SimSpeed { get; private set; } = 1f;
+        float m_FpsAccum, m_FpsFrames, m_FpsClock, m_SimTimeAtSample, m_RealTimeAtSample;
+
         System.Random m_Rng;
         float m_PhaseTimeLeft;
         bool m_PhaseLocked;
@@ -161,6 +175,7 @@ namespace RedLightQwop
             Instance = this;
             if (IsWebBuild && WebPhysicsTimestep > 0f) PhysicsTimestep = WebPhysicsTimestep;
             if (PhysicsTimestep > 0f) Time.fixedDeltaTime = PhysicsTimestep;
+            if (IsWebBuild && WebMaxDeltaTime > 0f) Time.maximumDeltaTime = WebMaxDeltaTime;
             ConfigureLayerCollisions(CharactersCollide);
             m_Rng = RandomSeed == 0 ? new System.Random() : new System.Random(RandomSeed);
         }
@@ -246,7 +261,18 @@ namespace RedLightQwop
                     ConnectionApproval = false,
                 };
             }
-            ((UnityTransport)nm.NetworkConfig.NetworkTransport).UseWebSockets = IsWebBuild;
+            var utp = (UnityTransport)nm.NetworkConfig.NetworkTransport;
+            utp.UseWebSockets = IsWebBuild;
+            // Tolerate a peer that stalls for a while (a browser host whose tab was hidden, a laptop
+            // that slept briefly) instead of dropping everyone after the default 30 s.
+            utp.DisconnectTimeoutMS = DisconnectTimeoutSeconds * 1000;
+            utp.MaxSendQueueSize = Mathf.Max(utp.MaxSendQueueSize, 512 * 1024);
+            if (IsWebBuild)
+            {
+                nm.NetworkConfig.TickRate = (uint)Mathf.Clamp(WebTickRate, 10, 60);
+                Application.targetFrameRate = WebSessionFrameRate;
+            }
+            Application.runInBackground = true;
             foreach (var prefab in new[] { PlayerPrefab, NpcPrefab, GameStatePrefab })
             {
                 if (prefab != null && !nm.NetworkConfig.Prefabs.Contains(prefab)) nm.AddNetworkPrefab(prefab);
@@ -324,7 +350,20 @@ namespace RedLightQwop
             if (nm != null && nm.IsListening) nm.Shutdown();
             SessionLabel = "";
             JoinCode = null;
+            if (IsWebBuild) Application.targetFrameRate = -1;
         }
+
+        /// <summary>Copy the join code to the clipboard (C key, or the menu). Returns false if unavailable.</summary>
+        public bool CopyJoinCode()
+        {
+            if (string.IsNullOrEmpty(JoinCode)) return false;
+            bool ok = WebBridge.CopyText(JoinCode);
+            SetStatus(ok ? $"online, join code {JoinCode} (copied)" : $"online, join code {JoinCode}");
+            return ok;
+        }
+
+        /// <summary>True while a browser host's tab is hidden, when the simulation runs at a crawl.</summary>
+        public bool HostTabHidden => IsWebBuild && IsServer && WebBridge.IsDocumentHidden;
 
         // --- Online sessions through Unity Relay ---------------------------------------------
         // The Multiplayer Services SDK allocates a relay, configures the UnityTransport and starts
@@ -609,11 +648,32 @@ namespace RedLightQwop
                 if (keyboard.rightBracketKey.wasPressedThisFrame) CycleDifficulty(+1);
                 if (keyboard.leftBracketKey.wasPressedThisFrame) CycleDifficulty(-1);
             }
+            if (keyboard != null && keyboard.cKey.wasPressedThisFrame && JoinCode != null && (Menu == null || !Menu.IsOpen)) CopyJoinCode();
 
             if (IsServer && Net != null && Net.RoundRunning.Value) ServerTick(Time.deltaTime);
 
+            TrackPerformance();
             if (IsClientOnly && Application.isBatchMode) BatchLog();
             if (Hud != null) Hud.Refresh(this);
+        }
+
+        void TrackPerformance()
+        {
+            m_FpsAccum += Time.unscaledDeltaTime;
+            m_FpsFrames += 1f;
+            m_FpsClock += Time.unscaledDeltaTime;
+            if (m_FpsClock < 1f) return;
+            Fps = m_FpsFrames / Mathf.Max(0.001f, m_FpsAccum);
+            float realElapsed = Time.realtimeSinceStartup - m_RealTimeAtSample;
+            float simElapsed = Time.time - m_SimTimeAtSample;
+            SimSpeed = realElapsed > 0f ? Mathf.Clamp01(simElapsed / realElapsed) : 1f;
+            m_SimTimeAtSample = Time.time;
+            m_RealTimeAtSample = Time.realtimeSinceStartup;
+            m_FpsAccum = 0f; m_FpsFrames = 0f; m_FpsClock = 0f;
+            if (IsWebBuild && IsServer && SessionActive && SimSpeed < 0.9f)
+            {
+                Debug.Log($"[Perf] host is falling behind: {Fps:0} fps, simulation at {SimSpeed * 100f:0}% speed, {Players.Count} players, {NpcCount} runners");
+            }
         }
 
         void ServerTick(float dt)

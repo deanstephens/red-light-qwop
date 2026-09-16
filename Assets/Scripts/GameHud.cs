@@ -43,7 +43,10 @@ namespace RedLightQwop
                         CenterText.text = "TIME'S UP\n<size=28>Press R to retry</size>";
                         break;
                     default:
-                        CenterText.text = game.SessionActive && game.Player == null ? "Connecting..." : "";
+                        if (GameManager.IsWebBuild && game.IsServer && game.SessionActive && game.TimeRemaining > game.TimeLimit - 8f)
+                            CenterText.text = "<size=26>You are hosting from a browser tab.\nKeep this tab visible: the game slows to a crawl for everyone while it is hidden.</size>";
+                        else
+                            CenterText.text = game.SessionActive && game.Player == null ? "Connecting..." : "";
                         break;
                 }
             }
@@ -52,6 +55,12 @@ namespace RedLightQwop
             {
                 string session = string.IsNullOrEmpty(game.SessionLabel) ? "" : $"      |      {game.SessionLabel}, {game.Players.Count} player{(game.Players.Count == 1 ? "" : "s")}";
                 string difficultyHint = game.IsServer ? "      [ ]  difficulty" : "";
+                if (game.JoinCode != null) difficultyHint += "      C  copy code";
+                if (GameManager.IsWebBuild && game.SessionActive)
+                {
+                    string speed = game.SimSpeed < 0.95f ? $" (sim {game.SimSpeed * 100f:0}%)" : "";
+                    difficultyHint += $"      {game.Fps:0} fps{speed}";
+                }
                 HintText.text = $"Q / W  hips      O / P  knees      R  restart{difficultyHint}{session}";
             }
         }
